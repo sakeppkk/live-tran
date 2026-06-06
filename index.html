@@ -1,0 +1,953 @@
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="th" class="min-h-screen">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Transcriber + Drive Save</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Sarabun', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    .custom-scrollbar::-webkit-scrollbar { width: 12px; height: 12px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(148, 163, 184, 0.18); border-radius: 999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.45); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+    .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,.55) rgba(148,163,184,.18); }
+    @keyframes wave-bounce {
+      0%, 100% { transform: scaleY(0.3); }
+      50% { transform: scaleY(1); }
+    }
+    .wave-bar { animation: wave-bounce 1.2s ease-in-out infinite; transform-origin: bottom; }
+    .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.6s; }
+    .wave-bar:nth-child(6) { animation-delay: 0.75s; }
+    .wave-bar:nth-child(7) { animation-delay: 0.9s; }
+
+    /* Layout stability patch */
+    main, section { min-width: 0; }
+    textarea { overscroll-behavior: contain; }
+    select, button, input { max-width: 100%; }
+    #output-grid > div { min-width: 0; }
+    @media (max-height: 760px) {
+      #transcript-card, #translation-card { height: 58vh; min-height: 460px; }
+    }
+  
+  </style>
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans min-h-screen transition-colors duration-300">
+
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 flex items-center gap-3 bg-white dark:bg-slate-800 shadow-2xl border border-slate-100 dark:border-slate-700 rounded-2xl px-5 py-4 max-w-sm">
+    <div id="toast-icon" class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400">
+      <i data-lucide="info" class="w-5 h-5"></i>
+    </div>
+    <div>
+      <h4 id="toast-title" class="font-semibold text-sm text-slate-900 dark:text-white">แจ้งเตือน</h4>
+      <p id="toast-message" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">ข้อความแจ้งเตือน</p>
+    </div>
+  </div>
+
+  <div class="flex flex-col min-h-screen">
+    <header class="border-b border-slate-200/80 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md sticky top-0 z-40 px-4 md:px-6 py-4 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/30 text-white">
+          <i data-lucide="radio-tower" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
+            Live Transcriber + Drive Save
+          </h1>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">ถอดเสียงสด + แปล + บันทึกเสียง/ข้อความลง Google Drive</p>
+        </div>
+      </div>
+
+      <button id="theme-toggle" class="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-all active:scale-95" title="เปลี่ยนธีม">
+        <i id="theme-icon" data-lucide="moon" class="w-5 h-5"></i>
+      </button>
+    </header>
+
+    <main class="flex-1 flex flex-col overflow-visible">
+
+      <section class="w-full max-w-[1600px] mx-auto p-4 md:p-6 flex flex-col gap-6 overflow-visible">
+
+        <div class="bg-white dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-5 flex flex-wrap gap-4 items-center justify-between shadow-sm">
+          <div class="flex flex-wrap items-center gap-3">
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="audio-lines" class="w-4 h-4 text-slate-400"></i>
+              <select id="mode-select" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="screen">เสียงในเครื่อง / Tab / Screen</option>
+                <option value="mic">ถอดจากไมค์</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="languages" class="w-4 h-4 text-slate-400"></i>
+              <select id="source-lang" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="th">ภาษาไทย</option>
+                <option value="en">English</option>
+                <option value="auto">Auto Detect</option>
+                <option value="ja">日本語</option>
+                <option value="zh">中文</option>
+                <option value="ko">한국어</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="repeat-2" class="w-4 h-4 text-slate-400"></i>
+              <select id="target-lang" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="">ไม่แปล</option>
+                <option value="th">แปลเป็นไทย</option>
+                <option value="en">Translate to English</option>
+                <option value="ja">日本語</option>
+                <option value="zh">中文</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="timer" class="w-4 h-4 text-slate-400"></i>
+              <select id="chunk-seconds" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="10">ทุก 10 วิ</option>
+                <option value="15" selected>ทุก 15 วิ</option>
+                <option value="20">ทุก 20 วิ</option>
+                <option value="30">ทุก 30 วิ</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="save" class="w-4 h-4 text-slate-400"></i>
+              <select id="save-mode" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="all" selected>บันทึกทั้งหมด</option>
+                <option value="textOnly">บันทึกเฉพาะข้อความ</option>
+                <option value="mediaOnly">บันทึกเฉพาะเสียง/วิดีโอ</option>
+                <option value="none">ไม่บันทึกลง Drive</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <i data-lucide="panels-top-left" class="w-4 h-4 text-slate-400"></i>
+              <select id="view-mode" class="bg-transparent text-sm font-medium focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer pr-2">
+                <option value="split" selected>แสดงคู่</option>
+                <option value="transcript">ต้นฉบับเต็มจอ</option>
+                <option value="translation">คำแปลเต็มจอ</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-2xl">
+              <button id="font-decrease" class="text-xs font-bold text-slate-500 hover:text-indigo-500 p-0.5">A-</button>
+              <div class="h-3 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1"></div>
+              <button id="font-increase" class="text-xs font-bold text-slate-500 hover:text-indigo-500 p-0.5">A+</button>
+            </div>
+          </div>
+
+          <span id="status-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+            พร้อมใช้งาน
+          </span>
+        </div>
+
+        <div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 rounded-3xl p-4 text-sm">
+          เลือกได้ว่าจะบันทึกทั้งหมด / เฉพาะข้อความ / เฉพาะเสียงหรือวิดีโอ / หรือไม่บันทึกลง Drive เลย ระหว่างถอดยังแสดงผลบนหน้าจอตามปกติ
+        </div>
+
+        <div id="upload-panel" class="bg-white dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-5 shadow-sm">
+          <div class="flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
+            <div>
+              <h2 class="font-bold text-lg flex items-center gap-2">
+                <i data-lucide="upload-cloud" class="w-5 h-5 text-indigo-500"></i>
+                โหมดอัปโหลดไฟล์มาถอด/แปล
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                รองรับ TXT, MP3, WAV, M4A, AAC, OGG, WEBM, MP4 แล้วบันทึก source_upload + transcript.txt + translation.txt ลง Drive
+              </p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <input id="audio-file-input" type="file" accept=".txt,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4,text/plain,audio/*,video/mp4,video/webm"
+                class="block w-full sm:w-80 text-sm text-slate-500 dark:text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-2xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 dark:file:bg-indigo-950/40 dark:file:text-indigo-300">
+              <button id="upload-transcribe-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-all">
+                <i data-lucide="file-input" class="w-4 h-4"></i> ถอด/แปลไฟล์
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="output-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[560px]">
+
+          <div id="transcript-card" class="bg-white dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-5 md:p-6 shadow-sm flex flex-col relative min-h-[560px] h-[62vh] max-h-[780px]">
+            <div id="visualizer" class="hidden absolute top-6 right-6 flex items-end gap-1 h-8">
+              <div class="wave-bar w-1.5 h-full rounded-full bg-indigo-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-indigo-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-indigo-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-purple-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-purple-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-indigo-500 origin-bottom"></div>
+              <div class="wave-bar w-1.5 h-full rounded-full bg-indigo-500 origin-bottom"></div>
+            </div>
+
+            <div class="mb-4">
+              <h2 class="font-bold text-lg">ภาษาต้นฉบับ</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">ข้อความถอดเสียงสดแบบต้นฉบับ</p>
+            </div>
+
+            <textarea id="transcript-box" class="custom-scrollbar flex-1 min-h-0 resize-none bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-700 rounded-3xl p-5 text-lg leading-relaxed outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100" placeholder="ข้อความต้นฉบับจะขึ้นตรงนี้..."></textarea>
+
+            <div class="border-t border-slate-100 dark:border-slate-800/80 pt-4 mt-4 flex flex-wrap justify-between items-center gap-3">
+              <div class="flex items-center gap-4 text-xs text-slate-400">
+                <span id="char-counter">0 ตัวอักษร</span>
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+                <span id="word-counter">0 คำ</span>
+              </div>
+
+              <button id="copy-transcript-btn" class="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-slate-600 dark:text-slate-300 transition-all active:scale-95">
+                <i data-lucide="copy" class="w-4 h-4"></i> คัดลอก
+              </button>
+            </div>
+          </div>
+
+          <div id="translation-card" class="bg-white dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 rounded-3xl p-5 md:p-6 shadow-sm flex flex-col relative min-h-[560px] h-[62vh] max-h-[780px]">
+            <div class="mb-4">
+              <h2 class="font-bold text-lg">คำแปล</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">แปลตามภาษาที่เลือก</p>
+            </div>
+
+            <textarea id="translation-box" class="custom-scrollbar flex-1 min-h-0 resize-none bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-700 rounded-3xl p-5 text-lg leading-relaxed outline-none focus:ring-2 focus:ring-purple-500 text-slate-800 dark:text-slate-100" placeholder="คำแปลจะขึ้นตรงนี้..."></textarea>
+
+            <div class="border-t border-slate-100 dark:border-slate-800/80 pt-4 mt-4 flex flex-wrap justify-end items-center gap-2">
+              <button id="copy-translation-btn" class="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:text-purple-600 dark:hover:text-purple-400 text-slate-600 dark:text-slate-300 transition-all active:scale-95">
+                <i data-lucide="copy" class="w-4 h-4"></i> คัดลอก
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center gap-3 py-2">
+          <button id="record-btn" class="group relative w-20 h-20 flex items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white shadow-xl shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all active:scale-95 focus:outline-none">
+            <span id="pulse-ring" class="hidden absolute inset-0 rounded-full bg-indigo-500 opacity-30 animate-ping"></span>
+            <div class="relative z-10 flex items-center justify-center">
+              <i id="record-icon" data-lucide="mic" class="w-8 h-8 transition-transform group-hover:scale-110"></i>
+            </div>
+          </button>
+          <span id="record-instruction" class="text-xs font-medium text-slate-500 dark:text-slate-400">
+            แตะเพื่อเริ่มถอด + บันทึกลง Drive
+          </span>
+        </div>
+
+      </section>
+
+      <section class="w-full border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 md:p-6 flex flex-col h-auto">
+        <div class="w-full max-w-[1600px] mx-auto">
+        <div class="flex items-center gap-2 mb-4">
+          <i data-lucide="folder-open" class="w-5 h-5 text-indigo-500"></i>
+          <h3 class="font-bold text-slate-800 dark:text-slate-200">Drive / Log</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
+          <a id="open-folder-link" href="#" target="_blank" class="hidden text-center px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-all">
+            เปิดโฟลเดอร์ Drive
+          </a>
+
+          <button id="download-all-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold transition-all">
+            <i data-lucide="download-cloud" class="w-4 h-4"></i> โหลดข้อความรวมในเครื่อง
+          </button>
+
+          <button id="clear-btn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-sm font-bold transition-all">
+            <i data-lucide="trash-2" class="w-4 h-4"></i> ล้างหน้าจอ
+          </button>
+        </div>
+
+        <div id="log-box" class="custom-scrollbar flex-1 min-h-[180px] max-h-[260px] overflow-y-auto rounded-2xl bg-slate-950 text-slate-100 p-4 text-xs font-mono whitespace-pre-wrap"></div>
+
+        <div class="mt-4 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/80">
+          <ul class="space-y-2 text-xs text-slate-500 dark:text-slate-400 leading-normal">
+            <li class="flex gap-1.5"><span class="text-indigo-500">•</span> บันทึกเสียงเป็นไฟล์เดียว audio_full.webm ตอนกดหยุด</li>
+            <li class="flex gap-1.5"><span class="text-indigo-500">•</span> transcript.txt และ translation.txt อัปเดตระหว่างถอด</li>
+            <li class="flex gap-1.5"><span class="text-indigo-500">•</span> ถ้าเลือกเสียงหน้าจอ ต้องติ๊ก Share audio</li>
+          </ul>
+        </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+<script>
+  const APPS_SCRIPT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycby0KnJLLE_Qm6cXccK0CBi7yMDSkS_5vfIFA5FeLcYaNuKth0P0MW9Ou8h_o5LuaDpwkQ/exec';
+
+  let isRecording = false;
+  let mediaStream = null;
+  let chunkRecorder = null;
+  let fullRecorder = null;
+  let fullAudioChunks = [];
+  let fullAudioMimeType = 'audio/webm';
+  let chunkTimer = null;
+  let chunkIndex = 0;
+  let currentFontSize = 18;
+  let session = null;
+
+  const modeSelect = document.getElementById('mode-select');
+  const recordBtn = document.getElementById('record-btn');
+  const recordIcon = document.getElementById('record-icon');
+  const recordInstruction = document.getElementById('record-instruction');
+  const pulseRing = document.getElementById('pulse-ring');
+  const visualizer = document.getElementById('visualizer');
+  const statusBadge = document.getElementById('status-badge');
+
+  const sourceLang = document.getElementById('source-lang');
+  const targetLang = document.getElementById('target-lang');
+  const chunkSeconds = document.getElementById('chunk-seconds');
+  const saveMode = document.getElementById('save-mode');
+  const viewMode = document.getElementById('view-mode');
+
+  const transcriptBox = document.getElementById('transcript-box');
+  const translationBox = document.getElementById('translation-box');
+  const outputGrid = document.getElementById('output-grid');
+  const transcriptCard = document.getElementById('transcript-card');
+  const translationCard = document.getElementById('translation-card');
+  const charCounter = document.getElementById('char-counter');
+  const wordCounter = document.getElementById('word-counter');
+
+  const copyTranscriptBtn = document.getElementById('copy-transcript-btn');
+  const copyTranslationBtn = document.getElementById('copy-translation-btn');
+  const downloadAllBtn = document.getElementById('download-all-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const openFolderLink = document.getElementById('open-folder-link');
+  const audioFileInput = document.getElementById('audio-file-input');
+  const uploadTranscribeBtn = document.getElementById('upload-transcribe-btn');
+
+  const fontIncrease = document.getElementById('font-increase');
+  const fontDecrease = document.getElementById('font-decrease');
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeIcon = document.getElementById('theme-icon');
+  const logBox = document.getElementById('log-box');
+
+  function log(msg) {
+    const time = new Date().toLocaleTimeString('th-TH');
+    logBox.textContent += '[' + time + '] ' + msg + '\n';
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  async function apiPost(payload) {
+    const res = await fetch(APPS_SCRIPT_WEBAPP_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  }
+
+  function shouldSaveMedia() {
+    return saveMode.value === 'all' || saveMode.value === 'mediaOnly';
+  }
+
+  function shouldCreateDrive() {
+    return saveMode.value !== 'none';
+  }
+
+  function getSaveModeLabel() {
+    const map = {
+      all: 'บันทึกทั้งหมด',
+      textOnly: 'บันทึกเฉพาะข้อความ',
+      mediaOnly: 'บันทึกเฉพาะเสียง/วิดีโอ',
+      none: 'ไม่บันทึกลง Drive'
+    };
+    return map[saveMode.value] || 'บันทึกทั้งหมด';
+  }
+
+  function applyViewMode() {
+    const mode = viewMode.value;
+
+    transcriptCard.classList.remove('hidden', 'xl:col-span-2');
+    translationCard.classList.remove('hidden', 'xl:col-span-2');
+    outputGrid.className = 'grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[560px]';
+
+    if (mode === 'transcript') {
+      translationCard.classList.add('hidden');
+      transcriptCard.classList.add('xl:col-span-2');
+      outputGrid.className = 'grid grid-cols-1 gap-6 min-h-[640px]';
+    } else if (mode === 'translation') {
+      transcriptCard.classList.add('hidden');
+      translationCard.classList.add('xl:col-span-2');
+      outputGrid.className = 'grid grid-cols-1 gap-6 min-h-[640px]';
+    }
+  }
+
+
+  async function startCapture() {
+    if (!navigator.mediaDevices) {
+      showToast('ไม่รองรับ', 'กรุณาใช้ Chrome หรือ Edge', 'error');
+      return;
+    }
+
+    try {
+      const startRes = await apiPost({
+        action: 'startSession',
+        mode: modeSelect.value,
+        sourceLang: sourceLang.value,
+        targetLang: targetLang.value,
+        saveMode: saveMode.value
+      });
+
+      if (startRes.error) throw new Error(startRes.error);
+      session = startRes;
+
+      if (session.folderUrl) {
+        openFolderLink.href = session.folderUrl;
+        openFolderLink.classList.remove('hidden');
+      } else {
+        openFolderLink.href = '#';
+        openFolderLink.classList.add('hidden');
+      }
+
+      if (modeSelect.value === 'screen') {
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+      } else {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      }
+
+      const audioTracks = mediaStream.getAudioTracks();
+      if (!audioTracks.length) {
+        throw new Error('ไม่พบเสียง ถ้าเลือกเสียงในเครื่องต้องติ๊ก Share audio / System audio');
+      }
+
+      mediaStream.getTracks().forEach(t => {
+        t.onended = () => {
+          if (isRecording) stopCapture();
+        };
+      });
+
+      isRecording = true;
+      chunkIndex = 0;
+      fullAudioChunks = [];
+
+      if (shouldSaveMedia()) startFullRecording();
+      else log('โหมดนี้ไม่บันทึกไฟล์เสียงเต็มลง Drive');
+      startChunkLoop();
+
+      updateUIState();
+      showToast('เริ่มแล้ว', 'กำลังถอดตามโหมด: ' + getSaveModeLabel(), 'success');
+      log('สร้าง session: ' + session.sessionId);
+      log('โหมดบันทึก: ' + getSaveModeLabel());
+      if (session.folderUrl) log('Drive: ' + session.folderUrl);
+
+    } catch (err) {
+      showToast('เริ่มไม่สำเร็จ', err.message || String(err), 'error');
+      stopCapture();
+    }
+  }
+
+  function startFullRecording() {
+    if (!mediaStream) return;
+
+    const audioTracks = mediaStream.getAudioTracks();
+    if (!audioTracks.length) return;
+
+    const audioOnlyStream = new MediaStream(audioTracks);
+
+    try {
+      fullRecorder = new MediaRecorder(audioOnlyStream);
+      fullAudioMimeType = fullRecorder.mimeType || 'audio/webm';
+    } catch (err) {
+      log('Full Recorder ERROR: ' + (err.message || String(err)));
+      return;
+    }
+
+    fullRecorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) fullAudioChunks.push(e.data);
+    };
+
+    fullRecorder.start(1000);
+    log('เริ่มบันทึกเสียงเต็มในหน่วยความจำชั่วคราว');
+  }
+
+  function startChunkLoop() {
+    const ms = Number(chunkSeconds.value || 15) * 1000;
+    recordOneChunk(ms);
+    chunkTimer = setInterval(() => {
+      if (isRecording) recordOneChunk(ms);
+    }, ms + 700);
+  }
+
+  function recordOneChunk(ms) {
+    if (!mediaStream || !isRecording || !session) return;
+    if (chunkRecorder && chunkRecorder.state === 'recording') return;
+
+    const audioTracks = mediaStream.getAudioTracks();
+    if (!audioTracks.length) return;
+
+    const audioOnlyStream = new MediaStream(audioTracks);
+    const chunks = [];
+
+    try {
+      chunkRecorder = new MediaRecorder(audioOnlyStream);
+    } catch (err) {
+      log('Recorder ERROR: ' + (err.message || String(err)));
+      return;
+    }
+
+    chunkRecorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+
+    chunkRecorder.onstop = async () => {
+      try {
+        const blob = new Blob(chunks, { type: chunkRecorder.mimeType || 'audio/webm' });
+
+        if (blob.size < 1200) {
+          log('ข้าม chunk เพราะเสียงสั้น/ไม่มีข้อมูล');
+          return;
+        }
+
+        chunkIndex++;
+        log('ส่ง chunk #' + chunkIndex + ' (' + Math.round(blob.size / 1024) + ' KB)');
+        const audioBase64 = await blobToBase64(blob);
+
+        const json = await apiPost({
+          action: 'processChunk',
+          sessionId: session.sessionId,
+          folderId: session.folderId,
+          transcriptFileId: session.transcriptFileId,
+          translationFileId: session.translationFileId,
+          audioBase64,
+          mimeType: blob.type || 'audio/webm',
+          sourceLang: sourceLang.value,
+          targetLang: targetLang.value,
+          chunkIndex,
+          saveMode: saveMode.value
+        });
+
+        if (json.error) {
+          log('API ERROR #' + chunkIndex + ': ' + json.error);
+          showToast('API Error', json.error, 'error');
+          return;
+        }
+
+        appendTranscript(json.transcript || '');
+        appendTranslation(json.translation || '');
+        log('chunk #' + chunkIndex + ' บันทึกแล้ว');
+
+      } catch (err) {
+        log('Chunk ERROR: ' + (err.message || String(err)));
+      }
+    };
+
+    try {
+      chunkRecorder.start();
+    } catch (err) {
+      log('Chunk start ERROR: ' + (err.message || String(err)));
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        if (chunkRecorder && chunkRecorder.state === 'recording') chunkRecorder.stop();
+      } catch (err) {}
+    }, ms);
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = String(reader.result || '');
+        resolve(dataUrl.split(',')[1] || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = String(reader.result || '');
+        resolve(dataUrl.split(',')[1] || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+
+  function appendTranscript(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    if (transcriptBox.value && !transcriptBox.value.endsWith('\n')) transcriptBox.value += '\n';
+    transcriptBox.value += clean + '\n';
+    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+    updateCounters();
+  }
+
+  function appendTranslation(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    if (translationBox.value && !translationBox.value.endsWith('\n')) translationBox.value += '\n';
+    translationBox.value += clean + '\n';
+    translationBox.scrollTop = translationBox.scrollHeight;
+  }
+
+  function updateCounters() {
+    const text = transcriptBox.value.trim();
+    charCounter.innerText = text.length + ' ตัวอักษร';
+    wordCounter.innerText = (text ? text.split(/\s+/).length : 0) + ' คำ';
+  }
+
+  async function stopCapture() {
+    const oldSession = session;
+    isRecording = false;
+
+    if (chunkTimer) {
+      clearInterval(chunkTimer);
+      chunkTimer = null;
+    }
+
+    try {
+      if (chunkRecorder && chunkRecorder.state === 'recording') chunkRecorder.stop();
+    } catch (err) {}
+
+    try {
+      if (fullRecorder && fullRecorder.state === 'recording') fullRecorder.stop();
+    } catch (err) {}
+
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream = null;
+    }
+
+    updateUIState();
+
+    if (oldSession && oldSession.folderId) {
+      try {
+        if (shouldSaveMedia()) log('กำลังรวมและอัปโหลดไฟล์เสียงเดียว...');
+        else log('ข้ามการอัปโหลดไฟล์เสียงตามโหมดบันทึก');
+        await waitForFullRecorderStop_();
+
+        let fullAudioBase64 = '';
+        if (shouldSaveMedia() && fullAudioChunks.length) {
+          const fullBlob = new Blob(fullAudioChunks, { type: fullAudioMimeType || 'audio/webm' });
+          log('ไฟล์เสียงเต็ม: ' + Math.round(fullBlob.size / 1024) + ' KB');
+          fullAudioBase64 = await blobToBase64(fullBlob);
+        }
+
+        const done = await apiPost({
+          action: 'finishSession',
+          folderId: oldSession.folderId,
+          transcriptFileId: oldSession.transcriptFileId,
+          translationFileId: oldSession.translationFileId,
+          fullAudioBase64,
+          fullAudioMimeType: fullAudioMimeType || 'audio/webm',
+          saveMode: saveMode.value
+        });
+
+        if (done.error) {
+          log('finish ERROR: ' + done.error);
+          showToast('Upload Error', done.error, 'error');
+          return;
+        }
+
+        if (done.folderUrl) {
+          openFolderLink.href = done.folderUrl;
+          openFolderLink.classList.remove('hidden');
+          log('เสร็จแล้ว: ' + done.folderUrl);
+        }
+
+        if (done.audioFileUrl) {
+          log('ไฟล์เสียงเดียว: ' + done.audioFileUrl);
+        }
+
+        // ล้างเสียงออกจาก Browser หลังอัปโหลดสำเร็จ
+        fullAudioChunks = [];
+        showToast('เสร็จแล้ว', 'ดำเนินการตามโหมด: ' + getSaveModeLabel(), 'success');
+
+      } catch (err) {
+        log('finish ERROR: ' + (err.message || String(err)));
+      }
+    }
+
+    log('หยุดถอดเสียง');
+  }
+
+  function waitForFullRecorderStop_() {
+    return new Promise(resolve => {
+      if (!fullRecorder || fullRecorder.state === 'inactive') {
+        setTimeout(resolve, 500);
+        return;
+      }
+
+      const oldOnStop = fullRecorder.onstop;
+      fullRecorder.onstop = function(e) {
+        if (typeof oldOnStop === 'function') oldOnStop(e);
+        setTimeout(resolve, 500);
+      };
+
+      try {
+        if (fullRecorder.state === 'recording') fullRecorder.stop();
+      } catch (err) {
+        resolve();
+      }
+    });
+  }
+
+  function updateUIState() {
+    if (isRecording) {
+      recordBtn.classList.remove('from-indigo-500', 'to-purple-600');
+      recordBtn.classList.add('from-rose-500', 'to-red-600', 'shadow-rose-500/30');
+      recordIcon.setAttribute('data-lucide', 'square');
+      recordInstruction.innerText = 'แตะเพื่อหยุด';
+      pulseRing.classList.remove('hidden');
+      visualizer.classList.remove('hidden');
+      statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span> กำลังถอด (' + getSaveModeLabel() + ')';
+      statusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400';
+    } else {
+      recordBtn.classList.remove('from-rose-500', 'to-red-600', 'shadow-rose-500/30');
+      recordBtn.classList.add('from-indigo-500', 'to-purple-600');
+      recordIcon.setAttribute('data-lucide', 'mic');
+      recordInstruction.innerText = 'แตะเพื่อเริ่มถอด + บันทึกลง Drive';
+      pulseRing.classList.add('hidden');
+      visualizer.classList.add('hidden');
+      statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> พร้อมใช้งาน';
+      statusBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300';
+    }
+    lucide.createIcons();
+  }
+
+  uploadTranscribeBtn.addEventListener('click', async () => {
+    const file = audioFileInput.files && audioFileInput.files[0];
+
+    if (!file) {
+      showToast('ยังไม่ได้เลือกไฟล์', 'กรุณาเลือกไฟล์ TXT / เสียง / วิดีโอก่อน', 'info');
+      return;
+    }
+
+    const allowedExt = ['txt', 'mp3', 'wav', 'm4a', 'aac', 'ogg', 'webm', 'mp4'];
+    const ext = String(file.name || '').split('.').pop().toLowerCase();
+
+    if (!allowedExt.includes(ext)) {
+      showToast('นามสกุลไม่รองรับ', 'รองรับ TXT, MP3, WAV, M4A, AAC, OGG, WEBM, MP4', 'error');
+      return;
+    }
+
+    try {
+      uploadTranscribeBtn.disabled = true;
+      uploadTranscribeBtn.classList.add('opacity-60', 'cursor-not-allowed');
+      showToast('กำลังประมวลผล', 'กำลังส่งไฟล์ไปถอด/แปล ตามโหมด: ' + getSaveModeLabel(), 'info');
+      log('เริ่มประมวลผลไฟล์: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)');
+
+      const fileBase64 = await fileToBase64(file);
+
+      const json = await apiPost({
+        action: 'uploadAnyFile',
+        fileName: file.name,
+        mimeType: file.type || '',
+        fileBase64,
+        sourceLang: sourceLang.value,
+        targetLang: targetLang.value,
+        saveMode: saveMode.value
+      });
+
+      if (json.error) {
+        log('UPLOAD ERROR: ' + json.error);
+        showToast('Upload Error', json.error, 'error');
+        return;
+      }
+
+      appendTranscript(json.transcript || '');
+      appendTranslation(json.translation || '');
+
+      if (json.folderUrl) {
+        openFolderLink.href = json.folderUrl;
+        openFolderLink.classList.remove('hidden');
+        log('Drive: ' + json.folderUrl);
+      } else {
+        openFolderLink.href = '#';
+        openFolderLink.classList.add('hidden');
+        log('โหมดนี้ไม่บันทึกลง Drive');
+      }
+
+      if (json.sourceFileUrl) {
+        log('ไฟล์ต้นฉบับ: ' + json.sourceFileUrl);
+      } else if (json.audioFileUrl) {
+        log('ไฟล์เสียง: ' + json.audioFileUrl);
+      }
+
+      log('ประมวลผลไฟล์สำเร็จ');
+      showToast('สำเร็จ', 'ถอด/แปลไฟล์เรียบร้อย ตามโหมด: ' + getSaveModeLabel(), 'success');
+
+    } catch (err) {
+      log('UPLOAD ERROR: ' + (err.message || String(err)));
+      showToast('ผิดพลาด', err.message || String(err), 'error');
+    } finally {
+      uploadTranscribeBtn.disabled = false;
+      uploadTranscribeBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+    }
+  });
+
+  viewMode.addEventListener('change', applyViewMode);
+
+  saveMode.addEventListener('change', () => {
+    log('เปลี่ยนโหมดบันทึกเป็น: ' + getSaveModeLabel());
+  });
+
+  recordBtn.addEventListener('click', () => {
+    if (isRecording) stopCapture();
+    else startCapture();
+  });
+
+  function copyText(value, label) {
+    if (!value.trim()) return;
+    const temp = document.createElement('textarea');
+    temp.value = value.trim();
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    document.body.removeChild(temp);
+    showToast('คัดลอกแล้ว', label, 'success');
+  }
+
+  function downloadText(filename, text) {
+    if (!text.trim()) return;
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  copyTranscriptBtn.addEventListener('click', () => copyText(transcriptBox.value, 'คัดลอกต้นฉบับแล้ว'));
+  copyTranslationBtn.addEventListener('click', () => copyText(translationBox.value, 'คัดลอกคำแปลแล้ว'));
+
+  downloadAllBtn.addEventListener('click', () => {
+    const text = 'TRANSCRIPT:\n' + transcriptBox.value.trim() + '\n\nTRANSLATION:\n' + translationBox.value.trim();
+    downloadText('live-transcript-all-' + Date.now() + '.txt', text);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    transcriptBox.value = '';
+    translationBox.value = '';
+    updateCounters();
+    showToast('ล้างแล้ว', 'ล้างหน้าจอแล้ว แต่ไฟล์ใน Drive ไม่ถูกลบ', 'info');
+  });
+
+  fontIncrease.addEventListener('click', () => {
+    if (currentFontSize < 32) {
+      currentFontSize += 2;
+      transcriptBox.style.fontSize = currentFontSize + 'px';
+      translationBox.style.fontSize = currentFontSize + 'px';
+    }
+  });
+
+  fontDecrease.addEventListener('click', () => {
+    if (currentFontSize > 14) {
+      currentFontSize -= 2;
+      transcriptBox.style.fontSize = currentFontSize + 'px';
+      translationBox.style.fontSize = currentFontSize + 'px';
+    }
+  });
+
+  if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+    themeIcon.setAttribute('data-lucide', 'sun');
+  } else {
+    document.documentElement.classList.remove('dark');
+    themeIcon.setAttribute('data-lucide', 'moon');
+  }
+
+  themeToggle.addEventListener('click', () => {
+    if (document.documentElement.classList.contains('dark')) {
+      document.documentElement.classList.remove('dark');
+      localStorage.theme = 'light';
+      themeIcon.setAttribute('data-lucide', 'moon');
+    } else {
+      document.documentElement.classList.add('dark');
+      localStorage.theme = 'dark';
+      themeIcon.setAttribute('data-lucide', 'sun');
+    }
+    lucide.createIcons();
+  });
+
+  function showToast(title, message, type = 'info') {
+    const toast = document.getElementById('toast');
+    const toastTitle = document.getElementById('toast-title');
+    const toastMsg = document.getElementById('toast-message');
+    const toastIconContainer = document.getElementById('toast-icon');
+
+    toastTitle.innerText = title;
+    toastMsg.innerText = message;
+    toastIconContainer.className = 'p-2 rounded-xl ';
+
+    if (type === 'success') {
+      toastIconContainer.classList.add('bg-emerald-50', 'dark:bg-emerald-950/40', 'text-emerald-600', 'dark:text-emerald-400');
+      toastIconContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-5 h-5"></i>';
+    } else if (type === 'error') {
+      toastIconContainer.classList.add('bg-rose-50', 'dark:bg-rose-950/40', 'text-rose-600', 'dark:text-rose-400');
+      toastIconContainer.innerHTML = '<i data-lucide="alert-circle" class="w-5 h-5"></i>';
+    } else {
+      toastIconContainer.classList.add('bg-indigo-50', 'dark:bg-indigo-950/40', 'text-indigo-600', 'dark:text-indigo-400');
+      toastIconContainer.innerHTML = '<i data-lucide="info" class="w-5 h-5"></i>';
+    }
+
+    lucide.createIcons();
+    toast.classList.remove('translate-y-[-100px]', 'opacity-0');
+    toast.classList.add('translate-y-0', 'opacity-100');
+
+    setTimeout(() => {
+      toast.classList.remove('translate-y-0', 'opacity-100');
+      toast.classList.add('translate-y-[-100px]', 'opacity-0');
+    }, 3500);
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (isRecording) stopCapture();
+  });
+
+  window.onload = () => {
+    lucide.createIcons();
+    updateUIState();
+    applyViewMode();
+    log('พร้อมใช้งาน');
+  };
+</script>
+</body>
+</html>
